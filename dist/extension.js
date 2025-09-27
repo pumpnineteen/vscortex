@@ -42,6 +42,8 @@ var VSCortexChatViewProvider = class {
   }
   static viewType = "vscortex-chat-view";
   webviewView;
+  currentModel;
+  chatHistory = [];
   resolveWebviewView(webviewView, context, token) {
     console.log("VSCortex Chat View Provider - resolveWebviewView called");
     this.webviewView = webviewView;
@@ -58,7 +60,14 @@ var VSCortexChatViewProvider = class {
             break;
           case "selectModel":
             console.log("Selected model:", message.model);
+            this.currentModel = message.model;
             vscode.window.showInformationMessage(`Selected model: ${message.model}`);
+            break;
+          case "sendMessage":
+            await this.handleSendMessage(message.content, message.includeContext);
+            break;
+          case "clearChat":
+            this.clearChatHistory();
             break;
           case "alert":
             vscode.window.showInformationMessage(message.text);
@@ -123,6 +132,119 @@ var VSCortexChatViewProvider = class {
       req.end();
     });
   }
+  async handleSendMessage(content, includeContext) {
+    if (!this.currentModel) {
+      vscode.window.showErrorMessage("Please select a model first");
+      return;
+    }
+    try {
+      let messageContent = content;
+      if (includeContext) {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && editor.selection && !editor.selection.isEmpty) {
+          const selectedText = editor.document.getText(editor.selection);
+          const fileName = editor.document.fileName;
+          messageContent = `Context from ${fileName}:
+\`\`\`
+${selectedText}
+\`\`\`
+
+Question: ${content}`;
+        }
+      }
+      const userMessage = {
+        id: Date.now().toString(),
+        role: "user",
+        content: messageContent,
+        timestamp: Date.now(),
+        model: this.currentModel
+      };
+      this.chatHistory.push(userMessage);
+      this.updateChatHistory();
+      this.updateChatStatus("generating");
+      const assistantMessage = await this.sendChatMessage(messageContent);
+      this.chatHistory.push(assistantMessage);
+      this.updateChatHistory();
+      this.updateChatStatus("idle");
+    } catch (error) {
+      console.error("Error sending message:", error);
+      this.updateChatStatus("error");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      vscode.window.showErrorMessage(`Chat error: ${errorMessage}`);
+    }
+  }
+  sendChatMessage(content) {
+    return new Promise((resolve, reject) => {
+      const requestData = {
+        model: this.currentModel,
+        messages: this.chatHistory.filter((msg) => msg.role !== "system").map((msg) => ({ role: msg.role, content: msg.content })).concat([{ role: "user", content }]),
+        stream: true,
+        options: {
+          temperature: 0.7
+        }
+      };
+      const postData = JSON.stringify(requestData);
+      const options = {
+        hostname: "localhost",
+        port: 11434,
+        path: "/api/chat",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(postData)
+        },
+        timeout: 3e4
+      };
+      const assistantMessage = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        model: this.currentModel
+      };
+      const req = http.request(options, (res) => {
+        let buffer = "";
+        res.on("data", (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.trim()) {
+              try {
+                const data = JSON.parse(line);
+                if (data.message?.content) {
+                  assistantMessage.content += data.message.content;
+                  this.streamMessageUpdate(assistantMessage);
+                }
+                if (data.done) {
+                  resolve(assistantMessage);
+                  return;
+                }
+              } catch (parseError) {
+                console.warn("Failed to parse streaming response:", parseError);
+              }
+            }
+          }
+        });
+        res.on("end", () => {
+          resolve(assistantMessage);
+        });
+      });
+      req.on("error", (error) => {
+        reject(new Error(`Chat request failed: ${error.message}`));
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Chat request timeout"));
+      });
+      req.write(postData);
+      req.end();
+    });
+  }
+  clearChatHistory() {
+    this.chatHistory = [];
+    this.updateChatHistory();
+  }
   updateConnectionStatus(status) {
     if (!this.webviewView) return;
     this.webviewView.webview.postMessage({
@@ -135,6 +257,27 @@ var VSCortexChatViewProvider = class {
     this.webviewView.webview.postMessage({
       command: "updateModelsList",
       models
+    });
+  }
+  updateChatHistory() {
+    if (!this.webviewView) return;
+    this.webviewView.webview.postMessage({
+      command: "updateChatHistory",
+      messages: this.chatHistory
+    });
+  }
+  streamMessageUpdate(message) {
+    if (!this.webviewView) return;
+    this.webviewView.webview.postMessage({
+      command: "streamMessageUpdate",
+      message
+    });
+  }
+  updateChatStatus(status) {
+    if (!this.webviewView) return;
+    this.webviewView.webview.postMessage({
+      command: "updateChatStatus",
+      status
     });
   }
   getHtml() {
@@ -155,12 +298,16 @@ var VSCortexChatViewProvider = class {
                         font-family: var(--vscode-font-family);
                         font-size: var(--vscode-font-size);
                         margin: 0;
+                        height: 100vh;
+                        display: flex;
+                        flex-direction: column;
                     }
                     
                     .container {
                         display: flex;
                         flex-direction: column;
                         gap: 12px;
+                        height: 100%;
                     }
                     
                     .header {
@@ -170,6 +317,7 @@ var VSCortexChatViewProvider = class {
                         border-bottom: 1px solid var(--vscode-panel-border);
                         padding-bottom: 8px;
                         margin-bottom: 8px;
+                        flex-shrink: 0;
                     }
                     
                     .title {
@@ -210,8 +358,8 @@ var VSCortexChatViewProvider = class {
                         border-radius: 4px;
                         cursor: pointer;
                         font-size: 12px;
-                        margin-bottom: 8px;
                         transition: background-color 0.2s;
+                        flex-shrink: 0;
                     }
                     
                     .refresh-btn:hover {
@@ -227,6 +375,7 @@ var VSCortexChatViewProvider = class {
                         display: flex;
                         flex-direction: column;
                         gap: 8px;
+                        flex-shrink: 0;
                     }
                     
                     .section-title {
@@ -240,7 +389,7 @@ var VSCortexChatViewProvider = class {
                         display: flex;
                         flex-direction: column;
                         gap: 4px;
-                        max-height: 400px;
+                        max-height: 200px;
                         overflow-y: auto;
                     }
                     
@@ -289,6 +438,154 @@ var VSCortexChatViewProvider = class {
                         font-weight: 500;
                     }
                     
+                    /* Chat Section Styles */
+                    .chat-section {
+                        display: flex;
+                        flex-direction: column;
+                        flex: 1;
+                        min-height: 0;
+                        border-top: 1px solid var(--vscode-panel-border);
+                        padding-top: 12px;
+                    }
+                    
+                    .chat-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 12px;
+                    }
+                    
+                    .clear-btn {
+                        background: none;
+                        border: 1px solid var(--vscode-panel-border);
+                        color: var(--vscode-foreground);
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 11px;
+                    }
+                    
+                    .clear-btn:hover {
+                        background-color: var(--vscode-list-hoverBackground);
+                    }
+                    
+                    .chat-messages {
+                        flex: 1;
+                        overflow-y: auto;
+                        border: 1px solid var(--vscode-panel-border);
+                        border-radius: 4px;
+                        padding: 12px;
+                        background-color: var(--vscode-editor-background);
+                        margin-bottom: 12px;
+                        min-height: 200px;
+                    }
+                    
+                    .message {
+                        margin-bottom: 16px;
+                        padding: 8px 12px;
+                        border-radius: 8px;
+                        max-width: 90%;
+                    }
+                    
+                    .message.user {
+                        background-color: var(--vscode-button-background);
+                        color: var(--vscode-button-foreground);
+                        margin-left: auto;
+                        text-align: right;
+                    }
+                    
+                    .message.assistant {
+                        background-color: var(--vscode-list-inactiveSelectionBackground);
+                        border: 1px solid var(--vscode-panel-border);
+                    }
+                    
+                    .message-content {
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                        line-height: 1.4;
+                    }
+                    
+                    .message-meta {
+                        font-size: 10px;
+                        color: var(--vscode-descriptionForeground);
+                        margin-top: 4px;
+                        opacity: 0.7;
+                    }
+                    
+                    .chat-input-container {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 8px;
+                        flex-shrink: 0;
+                    }
+                    
+                    .chat-options {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    
+                    .checkbox-container {
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                    }
+                    
+                    .checkbox-container input[type="checkbox"] {
+                        margin: 0;
+                    }
+                    
+                    .checkbox-container label {
+                        font-size: 11px;
+                        color: var(--vscode-descriptionForeground);
+                        cursor: pointer;
+                    }
+                    
+                    .chat-input-row {
+                        display: flex;
+                        gap: 8px;
+                    }
+                    
+                    .chat-input {
+                        flex: 1;
+                        background-color: var(--vscode-input-background);
+                        color: var(--vscode-input-foreground);
+                        border: 1px solid var(--vscode-input-border);
+                        border-radius: 4px;
+                        padding: 8px 12px;
+                        font-family: inherit;
+                        font-size: inherit;
+                        resize: vertical;
+                        min-height: 32px;
+                        max-height: 120px;
+                    }
+                    
+                    .chat-input:focus {
+                        outline: 1px solid var(--vscode-focusBorder);
+                        border-color: var(--vscode-focusBorder);
+                    }
+                    
+                    .send-btn {
+                        background-color: var(--vscode-button-background);
+                        color: var(--vscode-button-foreground);
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: 500;
+                        align-self: flex-end;
+                    }
+                    
+                    .send-btn:hover:not(:disabled) {
+                        background-color: var(--vscode-button-hoverBackground);
+                    }
+                    
+                    .send-btn:disabled {
+                        opacity: 0.6;
+                        cursor: not-allowed;
+                    }
+                    
                     .loading-spinner {
                         display: inline-block;
                         width: 16px;
@@ -311,14 +608,37 @@ var VSCortexChatViewProvider = class {
                         font-size: 13px;
                     }
                     
-                    .error-message {
-                        background-color: var(--vscode-inputValidation-errorBackground);
-                        border: 1px solid var(--vscode-inputValidation-errorBorder);
-                        color: var(--vscode-errorForeground);
-                        padding: 8px 12px;
-                        border-radius: 4px;
-                        font-size: 12px;
-                        margin-bottom: 8px;
+                    .chat-empty-state {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        height: 100%;
+                        color: var(--vscode-descriptionForeground);
+                        font-size: 13px;
+                        text-align: center;
+                    }
+                    
+                    .chat-status {
+                        font-size: 11px;
+                        color: var(--vscode-descriptionForeground);
+                        font-style: italic;
+                        text-align: center;
+                        padding: 4px;
+                    }
+                    
+                    .streaming-indicator {
+                        display: inline-block;
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 50%;
+                        background-color: var(--vscode-progressBar-background);
+                        animation: pulse 1s infinite;
+                        margin-left: 4px;
+                    }
+                    
+                    @keyframes pulse {
+                        0%, 100% { opacity: 0.3; }
+                        50% { opacity: 1; }
                     }
                 </style>
             </head>
@@ -345,15 +665,69 @@ var VSCortexChatViewProvider = class {
                             </div>
                         </div>
                     </div>
+                    
+                    <div class="chat-section">
+                        <div class="chat-header">
+                            <h3 class="section-title">Chat</h3>
+                            <button class="clear-btn" onclick="clearChat()">Clear</button>
+                        </div>
+                        
+                        <div id="chatMessages" class="chat-messages">
+                            <div class="chat-empty-state">
+                                Select a model and start chatting!
+                            </div>
+                        </div>
+                        
+                        <div id="chatStatus" class="chat-status" style="display: none;"></div>
+                        
+                        <div class="chat-input-container">
+                            <div class="chat-options">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="includeContext" />
+                                    <label for="includeContext">Include selected code as context</label>
+                                </div>
+                            </div>
+                            
+                            <div class="chat-input-row">
+                                <textarea 
+                                    id="chatInput" 
+                                    class="chat-input" 
+                                    placeholder="Ask a question..." 
+                                    rows="1"
+                                ></textarea>
+                                <button id="sendBtn" class="send-btn" onclick="sendMessage()">
+                                    Send
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <script>
                     const vscode = acquireVsCodeApi();
                     let selectedModel = null;
+                    let chatMessages = [];
+                    let isGenerating = false;
                     
                     // Get state from vscode API
-                    let state = vscode.getState() || { selectedModel: null };
+                    let state = vscode.getState() || { selectedModel: null, chatMessages: [] };
                     selectedModel = state.selectedModel;
+                    chatMessages = state.chatMessages || [];
+                    
+                    // Auto-resize textarea
+                    const chatInput = document.getElementById('chatInput');
+                    chatInput.addEventListener('input', function() {
+                        this.style.height = 'auto';
+                        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+                    });
+                    
+                    // Handle Enter key
+                    chatInput.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendMessage();
+                        }
+                    });
                     
                     function refreshModels() {
                         const btn = document.getElementById('refreshBtn');
@@ -372,7 +746,7 @@ var VSCortexChatViewProvider = class {
                     
                     function selectModel(modelName) {
                         selectedModel = modelName;
-                        vscode.setState({ selectedModel: modelName });
+                        vscode.setState({ selectedModel: modelName, chatMessages: chatMessages });
                         
                         // Update UI
                         document.querySelectorAll('.model-item').forEach(item => {
@@ -384,6 +758,81 @@ var VSCortexChatViewProvider = class {
                             command: 'selectModel',
                             model: modelName
                         });
+                        
+                        updateSendButtonState();
+                    }
+                    
+                    function sendMessage() {
+                        const input = document.getElementById('chatInput');
+                        const content = input.value.trim();
+                        const includeContext = document.getElementById('includeContext').checked;
+                        
+                        if (!content || !selectedModel || isGenerating) {
+                            return;
+                        }
+                        
+                        input.value = '';
+                        input.style.height = 'auto';
+                        
+                        vscode.postMessage({
+                            command: 'sendMessage',
+                            content: content,
+                            includeContext: includeContext
+                        });
+                    }
+                    
+                    function clearChat() {
+                        chatMessages = [];
+                        vscode.setState({ selectedModel: selectedModel, chatMessages: chatMessages });
+                        vscode.postMessage({ command: 'clearChat' });
+                        updateChatDisplay();
+                    }
+                    
+                    function updateSendButtonState() {
+                        const sendBtn = document.getElementById('sendBtn');
+                        const input = document.getElementById('chatInput');
+                        const hasModel = selectedModel !== null;
+                        const hasContent = input.value.trim().length > 0;
+                        
+                        sendBtn.disabled = !hasModel || !hasContent || isGenerating;
+                        
+                        if (isGenerating) {
+                            sendBtn.innerHTML = '<span class="loading-spinner"></span>Sending...';
+                        } else {
+                            sendBtn.innerHTML = 'Send';
+                        }
+                    }
+                    
+                    function updateChatDisplay() {
+                        const messagesContainer = document.getElementById('chatMessages');
+                        
+                        if (chatMessages.length === 0) {
+                            messagesContainer.innerHTML = \`
+                                <div class="chat-empty-state">
+                                    \${selectedModel ? 'Start a conversation!' : 'Select a model and start chatting!'}
+                                </div>
+                            \`;
+                            return;
+                        }
+                        
+                        messagesContainer.innerHTML = chatMessages.map(msg => \`
+                            <div class="message \${msg.role}">
+                                <div class="message-content">\${escapeHtml(msg.content)}</div>
+                                <div class="message-meta">
+                                    \${msg.role === 'user' ? 'You' : msg.model || 'Assistant'} \u2022 
+                                    \${new Date(msg.timestamp).toLocaleTimeString()}
+                                </div>
+                            </div>
+                        \`).join('');
+                        
+                        // Scroll to bottom
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    }
+                    
+                    function escapeHtml(text) {
+                        const div = document.createElement('div');
+                        div.textContent = text;
+                        return div.innerHTML;
                     }
                     
                     function formatBytes(bytes) {
@@ -410,6 +859,27 @@ var VSCortexChatViewProvider = class {
                                 
                             case 'updateModelsList':
                                 updateModelsList(message.models);
+                                break;
+                                
+                            case 'updateChatHistory':
+                                chatMessages = message.messages;
+                                vscode.setState({ selectedModel: selectedModel, chatMessages: chatMessages });
+                                updateChatDisplay();
+                                break;
+                                
+                            case 'streamMessageUpdate':
+                                // Find and update the streaming message
+                                const msgIndex = chatMessages.findIndex(m => m.id === message.message.id);
+                                if (msgIndex !== -1) {
+                                    chatMessages[msgIndex] = message.message;
+                                } else {
+                                    chatMessages.push(message.message);
+                                }
+                                updateChatDisplay();
+                                break;
+                                
+                            case 'updateChatStatus':
+                                updateChatStatus(message.status);
                                 break;
                         }
                     });
@@ -462,6 +932,40 @@ var VSCortexChatViewProvider = class {
                             </div>
                         \`).join('');
                     }
+                    
+                    function updateChatStatus(status) {
+                        const statusEl = document.getElementById('chatStatus');
+                        
+                        switch (status) {
+                            case 'generating':
+                                isGenerating = true;
+                                statusEl.style.display = 'block';
+                                statusEl.innerHTML = 'Generating response<span class="streaming-indicator"></span>';
+                                break;
+                            case 'error':
+                                isGenerating = false;
+                                statusEl.style.display = 'block';
+                                statusEl.innerHTML = 'Error generating response';
+                                setTimeout(() => {
+                                    statusEl.style.display = 'none';
+                                }, 3000);
+                                break;
+                            case 'idle':
+                            default:
+                                isGenerating = false;
+                                statusEl.style.display = 'none';
+                                break;
+                        }
+                        
+                        updateSendButtonState();
+                    }
+                    
+                    // Listen for input changes to update send button
+                    document.getElementById('chatInput').addEventListener('input', updateSendButtonState);
+                    
+                    // Initialize UI
+                    updateChatDisplay();
+                    updateSendButtonState();
                     
                     console.log('VSCortex Chat webview loaded successfully');
                 </script>

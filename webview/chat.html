@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSCortex Chat</title>
+    <link rel="stylesheet" href="{{cssUri}}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">VSCortex</h1>
+            <div id="connectionStatus" class="connection-status status-connecting">
+                <span class="loading-spinner"></span>
+                Connecting
+            </div>
+        </div>
+        
+        <button id="refreshBtn" class="refresh-btn" onclick="refreshModels()">
+            Refresh Models
+        </button>
+        
+        <div class="models-section">
+            <h3 class="section-title">Available Models</h3>
+            <div id="modelsList" class="models-list">
+                <div class="empty-state">
+                    <div class="loading-spinner"></div>
+                    Loading models...
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-section">
+            <div class="chat-header">
+                <h3 class="section-title">Chat</h3>
+                <button class="clear-btn" onclick="clearChat()">Clear</button>
+            </div>
+            
+            <div id="chatMessages" class="chat-messages">
+                <div class="chat-empty-state">
+                    Select a model and start chatting!
+                </div>
+            </div>
+            
+            <div id="chatStatus" class="chat-status" style="display: none;"></div>
+            
+            <div class="chat-input-container">
+                <div class="chat-options">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="includeContext" />
+                        <label for="includeContext">Include selected code as context</label>
+                    </div>
+                </div>
+                
+                <div class="chat-input-row">
+                    <textarea 
+                        id="chatInput" 
+                        class="chat-input" 
+                        placeholder="Ask a question..." 
+                        rows="1"
+                    ></textarea>
+                    <button id="sendBtn" class="send-btn" onclick="sendMessage()">
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{scriptUri}}"></script>
+</body>
+</html>
