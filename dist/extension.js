@@ -1,161 +1,146 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import * as http from 'http';
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-interface OllamaModel {
-    name: string;
-    model: string;
-    modified_at: string;
-    size: number;
-    digest: string;
-    details: {
-        parent_model: string;
-        format: string;
-        family: string;
-        families: string[];
-        parameter_size: string;
-        quantization_level: string;
+// src/extension.ts
+var extension_exports = {};
+__export(extension_exports, {
+  activate: () => activate,
+  deactivate: () => deactivate
+});
+module.exports = __toCommonJS(extension_exports);
+var vscode = __toESM(require("vscode"));
+var http = __toESM(require("http"));
+var VSCortexChatViewProvider = class {
+  constructor(extensionUri) {
+    this.extensionUri = extensionUri;
+  }
+  static viewType = "vscortex-chat-view";
+  webviewView;
+  resolveWebviewView(webviewView, context, token) {
+    console.log("VSCortex Chat View Provider - resolveWebviewView called");
+    this.webviewView = webviewView;
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.extensionUri]
     };
-}
-
-interface OllamaListResponse {
-    models: OllamaModel[];
-}
-
-class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = "vscortex-chat-view";
-    private webviewView?: vscode.WebviewView;
-
-    constructor(private readonly extensionUri: vscode.Uri) {}
-
-    resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext,
-        token: vscode.CancellationToken
-    ): void | Thenable<void> {
-        console.log('VSCortex Chat View Provider - resolveWebviewView called');
-        
-        this.webviewView = webviewView;
-        
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [this.extensionUri]
-        };
-
-        webviewView.webview.html = this.getHtml();
-        
-        // Add message handling for webview communication
-        webviewView.webview.onDidReceiveMessage(
-            async message => {
-                switch (message.command) {
-                    case 'refreshModels':
-                        await this.refreshOllamaModels();
-                        break;
-                    case 'selectModel':
-                        console.log('Selected model:', message.model);
-                        vscode.window.showInformationMessage(`Selected model: ${message.model}`);
-                        break;
-                    case 'alert':
-                        vscode.window.showInformationMessage(message.text);
-                        break;
-                }
-            },
-            undefined,
-            []
-        );
-
-        // Load models on initial view creation
-        this.refreshOllamaModels();
-
-        console.log('VSCortex Chat View HTML set successfully');
-    }
-
-    private async refreshOllamaModels(): Promise<void> {
-        try {
-            console.log('Fetching Ollama models...');
-            this.updateConnectionStatus('connecting');
-            
-            const models = await this.fetchOllamaModels();
-            console.log(`Found ${models.length} Ollama models`);
-            
-            this.updateConnectionStatus('connected');
-            this.updateModelsList(models);
-            
-        } catch (error) {
-            console.error('Failed to fetch Ollama models:', error);
-            this.updateConnectionStatus('error');
-            this.updateModelsList([]);
-            
-            let errorMessage = 'Unknown error';
-            if (error instanceof Error) {
-                errorMessage = error.message;
-            }
-            
-            vscode.window.showErrorMessage(`Failed to connect to Ollama: ${errorMessage}`);
+    webviewView.webview.html = this.getHtml();
+    webviewView.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case "refreshModels":
+            await this.refreshOllamaModels();
+            break;
+          case "selectModel":
+            console.log("Selected model:", message.model);
+            vscode.window.showInformationMessage(`Selected model: ${message.model}`);
+            break;
+          case "alert":
+            vscode.window.showInformationMessage(message.text);
+            break;
         }
+      },
+      void 0,
+      []
+    );
+    this.refreshOllamaModels();
+    console.log("VSCortex Chat View HTML set successfully");
+  }
+  async refreshOllamaModels() {
+    try {
+      console.log("Fetching Ollama models...");
+      this.updateConnectionStatus("connecting");
+      const models = await this.fetchOllamaModels();
+      console.log(`Found ${models.length} Ollama models`);
+      this.updateConnectionStatus("connected");
+      this.updateModelsList(models);
+    } catch (error) {
+      console.error("Failed to fetch Ollama models:", error);
+      this.updateConnectionStatus("error");
+      this.updateModelsList([]);
+      let errorMessage = "Unknown error";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      vscode.window.showErrorMessage(`Failed to connect to Ollama: ${errorMessage}`);
     }
-
-    private fetchOllamaModels(): Promise<OllamaModel[]> {
-        return new Promise((resolve, reject) => {
-            const options = {
-                hostname: 'localhost',
-                port: 11434,
-                path: '/api/tags',
-                method: 'GET',
-                timeout: 5000
-            };
-
-            const req = http.request(options, (res) => {
-                let data = '';
-                
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-                
-                res.on('end', () => {
-                    try {
-                        const response: OllamaListResponse = JSON.parse(data);
-                        resolve(response.models || []);
-                    } catch (parseError) {
-                        reject(new Error(`Failed to parse response: ${parseError}`));
-                    }
-                });
-            });
-
-            req.on('error', (error) => {
-                reject(new Error(`Connection failed: ${error.message}`));
-            });
-
-            req.on('timeout', () => {
-                req.destroy();
-                reject(new Error('Connection timeout - is Ollama server running?'));
-            });
-
-            req.end();
+  }
+  fetchOllamaModels() {
+    return new Promise((resolve, reject) => {
+      const options = {
+        hostname: "localhost",
+        port: 11434,
+        path: "/api/tags",
+        method: "GET",
+        timeout: 5e3
+      };
+      const req = http.request(options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => {
+          data += chunk;
         });
-    }
-
-    private updateConnectionStatus(status: 'connecting' | 'connected' | 'error'): void {
-        if (!this.webviewView) return;
-        
-        this.webviewView.webview.postMessage({
-            command: 'updateConnectionStatus',
-            status: status
+        res.on("end", () => {
+          try {
+            const response = JSON.parse(data);
+            resolve(response.models || []);
+          } catch (parseError) {
+            reject(new Error(`Failed to parse response: ${parseError}`));
+          }
         });
-    }
-
-    private updateModelsList(models: OllamaModel[]): void {
-        if (!this.webviewView) return;
-        
-        this.webviewView.webview.postMessage({
-            command: 'updateModelsList',
-            models: models
-        });
-    }
-
-    private getHtml(): string {
-        return /* html */`
+      });
+      req.on("error", (error) => {
+        reject(new Error(`Connection failed: ${error.message}`));
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Connection timeout - is Ollama server running?"));
+      });
+      req.end();
+    });
+  }
+  updateConnectionStatus(status) {
+    if (!this.webviewView) return;
+    this.webviewView.webview.postMessage({
+      command: "updateConnectionStatus",
+      status
+    });
+  }
+  updateModelsList(models) {
+    if (!this.webviewView) return;
+    this.webviewView.webview.postMessage({
+      command: "updateModelsList",
+      models
+    });
+  }
+  getHtml() {
+    return (
+      /* html */
+      `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -348,7 +333,7 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                     </div>
                     
                     <button id="refreshBtn" class="refresh-btn" onclick="refreshModels()">
-                        🔄 Refresh Models
+                        \u{1F504} Refresh Models
                     </button>
                     
                     <div class="models-section">
@@ -373,7 +358,7 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                     function refreshModels() {
                         const btn = document.getElementById('refreshBtn');
                         btn.disabled = true;
-                        btn.innerHTML = '🔄 Refreshing...';
+                        btn.innerHTML = '\u{1F504} Refreshing...';
                         
                         vscode.postMessage({
                             command: 'refreshModels'
@@ -381,7 +366,7 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                         
                         setTimeout(() => {
                             btn.disabled = false;
-                            btn.innerHTML = '🔄 Refresh Models';
+                            btn.innerHTML = '\u{1F504} Refresh Models';
                         }, 2000);
                     }
                     
@@ -440,11 +425,11 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                                 break;
                             case 'connected':
                                 statusEl.classList.add('status-connected');
-                                statusEl.innerHTML = '● Connected';
+                                statusEl.innerHTML = '\u25CF Connected';
                                 break;
                             case 'error':
                                 statusEl.classList.add('status-error');
-                                statusEl.innerHTML = '● Error';
+                                statusEl.innerHTML = '\u25CF Error';
                                 break;
                         }
                     }
@@ -469,7 +454,7 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                                 <div class="model-info">
                                     <div class="model-name">\${model.name}</div>
                                     <div class="model-details">
-                                        \${model.details?.parameter_size || 'Unknown size'} • 
+                                        \${model.details?.parameter_size || 'Unknown size'} \u2022 
                                         \${model.details?.family || 'Unknown family'}
                                     </div>
                                 </div>
@@ -482,40 +467,31 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                 </script>
             </body>
             </html>
-        `;
-    }
-}
-
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
-
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "vscortex" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('vscortex.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from VSCortex! IT IS ME!!!');
-	});
-
-	context.subscriptions.push(disposable);
-
-    const provider = new VSCortexChatViewProvider(context.extensionUri);
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(
-            VSCortexChatViewProvider.viewType,
-            provider,
-            { webviewOptions: { retainContextWhenHidden: true } }
-        )
+        `
     );
-    console.log('Provider registered for', VSCortexChatViewProvider.viewType);
-
+  }
+};
+function activate(context) {
+  console.log('Congratulations, your extension "vscortex" is now active!');
+  const disposable = vscode.commands.registerCommand("vscortex.helloWorld", () => {
+    vscode.window.showInformationMessage("Hello World from VSCortex! IT IS ME!!!");
+  });
+  context.subscriptions.push(disposable);
+  const provider = new VSCortexChatViewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      VSCortexChatViewProvider.viewType,
+      provider,
+      { webviewOptions: { retainContextWhenHidden: true } }
+    )
+  );
+  console.log("Provider registered for", VSCortexChatViewProvider.viewType);
 }
-
-// This method is called when your extension is deactivated
-export function deactivate() {}
+function deactivate() {
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  activate,
+  deactivate
+});
+//# sourceMappingURL=extension.js.map

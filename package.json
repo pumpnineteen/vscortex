@@ -9,15 +9,37 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "vscortex.helloWorld",
-        "title": "Hello World"
+        "title": "vscortex.helloWorld - Hello World"
       }
-    ]
+    ],
+    "viewsContainers": {
+        "activitybar": [
+            {
+            "id": "vscortex-sidebar",
+            "title": "VSCortex",
+            "icon": "media/vscortex.svg"
+            }
+        ]
+        },
+        "views": {
+      "vscortex-sidebar": [
+        { 
+            "id": "vscortex-chat-view", 
+            "name": "Chat",
+            "type": "webview",
+            "when": "true" 
+        }
+      ]
+    }
+
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
