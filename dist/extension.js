@@ -38,6 +38,7 @@ var vscode = __toESM(require("vscode"));
 var http = __toESM(require("http"));
 var https = __toESM(require("https"));
 var fs = __toESM(require("fs"));
+var url = __toESM(require("url"));
 var VSCortexChatViewProvider = class {
   constructor(extensionUri) {
     this.extensionUri = extensionUri;
@@ -51,10 +52,7 @@ var VSCortexChatViewProvider = class {
     this.webviewView = webviewView;
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(this.extensionUri, "webview"),
-        this.extensionUri
-      ]
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "webview"), this.extensionUri]
     };
     webviewView.webview.html = this.getHtml(webviewView.webview);
     webviewView.webview.onDidReceiveMessage(
@@ -67,9 +65,6 @@ var VSCortexChatViewProvider = class {
             console.log("Selected model:", message.model);
             this.currentModel = message.model;
             vscode.window.showInformationMessage(`Selected model: ${message.model}`);
-            break;
-          case "sendMessage":
-            await this.handleSendMessage(message.content, message.includeContext);
             break;
           case "clearChat":
             this.clearChatHistory();
@@ -164,11 +159,9 @@ Question: ${content}`;
         try {
           const searchResults = await this.performWebSearch(content);
           if (searchResults.length > 0) {
-            const searchContext = searchResults.map(
-              (result) => `**${result.title}**
+            const searchContext = searchResults.map((result) => `**${result.title}**
 ${result.snippet}
-Source: ${result.url}`
-            ).join("\n\n");
+Source: ${result.url}`).join("\n\n");
             messageContent = `Web Search Results:
 ${searchContext}
 
@@ -275,7 +268,6 @@ Based on the above information, please answer: ${content}`;
       const options = {
         timeout: 1e4
       };
-      const url = require("url");
       const parsedUrl = url.parse(searchUrl);
       const requestOptions = {
         hostname: parsedUrl.hostname,
@@ -535,11 +527,9 @@ function activate(context) {
   context.subscriptions.push(disposable);
   const provider = new VSCortexChatViewProvider(context.extensionUri);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      VSCortexChatViewProvider.viewType,
-      provider,
-      { webviewOptions: { retainContextWhenHidden: true } }
-    )
+    vscode.window.registerWebviewViewProvider(VSCortexChatViewProvider.viewType, provider, {
+      webviewOptions: { retainContextWhenHidden: true }
+    })
   );
   console.log("Provider registered for", VSCortexChatViewProvider.viewType);
 }

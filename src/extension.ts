@@ -1,55 +1,57 @@
+/* eslint-disable semi */
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import * as http from 'http';
-import * as https from 'https';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as vscode from "vscode"
+import * as http from "http"
+import * as https from "https"
+import * as fs from "fs"
+import * as path from "path"
+import * as url from "url"
 
 interface OllamaModel {
-    name: string;
-    model: string;
-    modified_at: string;
-    size: number;
-    digest: string;
+    name: string
+    model: string
+    modified_at: string
+    size: number
+    digest: string
     details: {
-        parent_model: string;
-        format: string;
-        family: string;
-        families: string[];
-        parameter_size: string;
-        quantization_level: string;
-    };
+        parent_model: string
+        format: string
+        family: string
+        families: string[]
+        parameter_size: string
+        quantization_level: string
+    }
 }
 
 interface OllamaListResponse {
-    models: OllamaModel[];
+    models: OllamaModel[]
 }
 
 interface ChatMessage {
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    timestamp: number;
-    model?: string;
+    id: string
+    role: "user" | "assistant" | "system"
+    content: string
+    timestamp: number
+    model?: string
 }
 
 interface OllamaChatRequest {
-    model: string;
-    messages: { role: string; content: string; }[];
-    stream: boolean;
+    model: string
+    messages: { role: string; content: string }[]
+    stream: boolean
     options?: {
-        temperature?: number;
-        top_p?: number;
-        top_k?: number;
-    };
+        temperature?: number
+        top_p?: number
+        top_k?: number
+    }
 }
 
 class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = "vscortex-chat-view";
-    private webviewView?: vscode.WebviewView;
-    private currentModel?: string;
-    private chatHistory: ChatMessage[] = [];
+    public static readonly viewType = "vscortex-chat-view"
+    private webviewView?: vscode.WebviewView
+    private currentModel?: string
+    private chatHistory: ChatMessage[] = []
 
     constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -58,542 +60,531 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
         context: vscode.WebviewViewResolveContext,
         token: vscode.CancellationToken
     ): void | Thenable<void> {
-        console.log('VSCortex Chat View Provider - resolveWebviewView called');
-        
-        this.webviewView = webviewView;
-        
+        console.log("VSCortex Chat View Provider - resolveWebviewView called")
+
+        this.webviewView = webviewView
+
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [
-                vscode.Uri.joinPath(this.extensionUri, 'webview'),
-                this.extensionUri
-            ]
-        };
+            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "webview"), this.extensionUri],
+        }
 
-        webviewView.webview.html = this.getHtml(webviewView.webview);
-        
+        webviewView.webview.html = this.getHtml(webviewView.webview)
+
         // Add message handling for webview communication
         webviewView.webview.onDidReceiveMessage(
-            async message => {
+            async (message) => {
                 switch (message.command) {
-                    case 'refreshModels':
-                        await this.refreshOllamaModels();
-                        break;
-                    case 'selectModel':
-                        console.log('Selected model:', message.model);
-                        this.currentModel = message.model;
-                        vscode.window.showInformationMessage(`Selected model: ${message.model}`);
-                        break;
-                    case 'sendMessage':
-                        await this.handleSendMessage(message.content, message.includeContext);
-                        break;
-                    case 'clearChat':
-                        this.clearChatHistory();
-                        break;
-                    case 'alert':
-                        vscode.window.showInformationMessage(message.text);
-                        break;
-                    case 'sendMessage':
-                        await this.handleSendMessage(message.content, message.includeContext, message.webSearch);
-                        break;
+                    case "refreshModels":
+                        await this.refreshOllamaModels()
+                        break
+                    case "selectModel":
+                        console.log("Selected model:", message.model)
+                        this.currentModel = message.model
+                        vscode.window.showInformationMessage(`Selected model: ${message.model}`)
+                        break
+                    case "clearChat":
+                        this.clearChatHistory()
+                        break
+                    case "alert":
+                        vscode.window.showInformationMessage(message.text)
+                        break
+                    case "sendMessage":
+                        await this.handleSendMessage(message.content, message.includeContext, message.webSearch)
+                        break
                 }
             },
             undefined,
             []
-        );
+        )
 
         // Load models on initial view creation
-        this.refreshOllamaModels();
+        this.refreshOllamaModels()
 
-        console.log('VSCortex Chat View HTML set successfully');
+        console.log("VSCortex Chat View HTML set successfully")
     }
 
     private async refreshOllamaModels(): Promise<void> {
         try {
-            console.log('Fetching Ollama models...');
-            this.updateConnectionStatus('connecting');
-            
-            const models = await this.fetchOllamaModels();
-            console.log(`Found ${models.length} Ollama models`);
-            
-            this.updateConnectionStatus('connected');
-            this.updateModelsList(models);
-            
+            console.log("Fetching Ollama models...")
+            this.updateConnectionStatus("connecting")
+
+            const models = await this.fetchOllamaModels()
+            console.log(`Found ${models.length} Ollama models`)
+
+            this.updateConnectionStatus("connected")
+            this.updateModelsList(models)
         } catch (error) {
-            console.error('Failed to fetch Ollama models:', error);
-            this.updateConnectionStatus('error');
-            this.updateModelsList([]);
-            
-            let errorMessage = 'Unknown error';
+            console.error("Failed to fetch Ollama models:", error)
+            this.updateConnectionStatus("error")
+            this.updateModelsList([])
+
+            let errorMessage = "Unknown error"
             if (error instanceof Error) {
-                errorMessage = error.message;
+                errorMessage = error.message
             }
-            
-            vscode.window.showErrorMessage(`Failed to connect to Ollama: ${errorMessage}`);
+
+            vscode.window.showErrorMessage(`Failed to connect to Ollama: ${errorMessage}`)
         }
     }
 
     private fetchOllamaModels(): Promise<OllamaModel[]> {
         return new Promise((resolve, reject) => {
             const options = {
-                hostname: 'localhost',
+                hostname: "localhost",
                 port: 11434,
-                path: '/api/tags',
-                method: 'GET',
-                timeout: 5000
-            };
+                path: "/api/tags",
+                method: "GET",
+                timeout: 5000,
+            }
 
             const req = http.request(options, (res) => {
-                let data = '';
-                
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-                
-                res.on('end', () => {
+                let data = ""
+
+                res.on("data", (chunk) => {
+                    data += chunk
+                })
+
+                res.on("end", () => {
                     try {
-                        const response: OllamaListResponse = JSON.parse(data);
-                        resolve(response.models || []);
+                        const response: OllamaListResponse = JSON.parse(data)
+                        resolve(response.models || [])
                     } catch (parseError) {
-                        reject(new Error(`Failed to parse response: ${parseError}`));
+                        reject(new Error(`Failed to parse response: ${parseError}`))
                     }
-                });
-            });
+                })
+            })
 
-            req.on('error', (error) => {
-                reject(new Error(`Connection failed: ${error.message}`));
-            });
+            req.on("error", (error) => {
+                reject(new Error(`Connection failed: ${error.message}`))
+            })
 
-            req.on('timeout', () => {
-                req.destroy();
-                reject(new Error('Connection timeout - is Ollama server running?'));
-            });
+            req.on("timeout", () => {
+                req.destroy()
+                reject(new Error("Connection timeout - is Ollama server running?"))
+            })
 
-            req.end();
-        });
+            req.end()
+        })
     }
 
     private async handleSendMessage(content: string, includeContext: boolean, webSearch?: boolean): Promise<void> {
-    if (!this.currentModel) {
-        vscode.window.showErrorMessage('Please select a model first');
-        return;
-    }
-
-    try {
-        // Add context from selected code if requested
-        let messageContent = content;
-        if (includeContext) {
-            const editor = vscode.window.activeTextEditor;
-            if (editor && editor.selection && !editor.selection.isEmpty) {
-                const selectedText = editor.document.getText(editor.selection);
-                const fileName = editor.document.fileName;
-                messageContent = `Context from ${fileName}:\n\`\`\`\n${selectedText}\n\`\`\`\n\nQuestion: ${content}`;
-            }
+        if (!this.currentModel) {
+            vscode.window.showErrorMessage("Please select a model first")
+            return
         }
 
-        // Add web search results if requested
-        if (webSearch) {
-            try {
-                const searchResults = await this.performWebSearch(content);
-                if (searchResults.length > 0) {
-                    const searchContext = searchResults.map(result => 
-                        `**${result.title}**\n${result.snippet}\nSource: ${result.url}`
-                    ).join('\n\n');
-                    
-                    messageContent = `Web Search Results:\n${searchContext}\n\nBased on the above information, please answer: ${content}`;
+        try {
+            // Add context from selected code if requested
+            let messageContent = content
+            if (includeContext) {
+                const editor = vscode.window.activeTextEditor
+                if (editor && editor.selection && !editor.selection.isEmpty) {
+                    const selectedText = editor.document.getText(editor.selection)
+                    const fileName = editor.document.fileName
+                    messageContent = `Context from ${fileName}:\n\`\`\`\n${selectedText}\n\`\`\`\n\nQuestion: ${content}`
                 }
-            } catch (error) {
-                console.warn('Web search failed:', error);
-                vscode.window.showWarningMessage('Web search failed, continuing without search results');
             }
+
+            // Add web search results if requested
+            if (webSearch) {
+                try {
+                    const searchResults = await this.performWebSearch(content)
+                    if (searchResults.length > 0) {
+                        const searchContext = searchResults
+                            .map((result) => `**${result.title}**\n${result.snippet}\nSource: ${result.url}`)
+                            .join("\n\n")
+
+                        messageContent = `Web Search Results:\n${searchContext}\n\nBased on the above information, please answer: ${content}`
+                    }
+                } catch (error) {
+                    console.warn("Web search failed:", error)
+                    vscode.window.showWarningMessage("Web search failed, continuing without search results")
+                }
+            }
+
+            // Add user message to history
+            const userMessage: ChatMessage = {
+                id: Date.now().toString(),
+                role: "user",
+                content: messageContent,
+                timestamp: Date.now(),
+                model: this.currentModel,
+            }
+
+            this.chatHistory.push(userMessage)
+            this.updateChatHistory()
+
+            // Start streaming response
+            this.updateChatStatus("generating")
+            const assistantMessage = await this.sendChatMessage(messageContent)
+
+            this.chatHistory.push(assistantMessage)
+            this.updateChatHistory()
+            this.updateChatStatus("idle")
+        } catch (error) {
+            console.error("Error sending message:", error)
+            this.updateChatStatus("error")
+
+            const errorMessage = error instanceof Error ? error.message : "Unknown error"
+            vscode.window.showErrorMessage(`Chat error: ${errorMessage}`)
         }
-
-        // Add user message to history
-        const userMessage: ChatMessage = {
-            id: Date.now().toString(),
-            role: 'user',
-            content: messageContent,
-            timestamp: Date.now(),
-            model: this.currentModel
-        };
-        
-        this.chatHistory.push(userMessage);
-        this.updateChatHistory();
-
-        // Start streaming response
-        this.updateChatStatus('generating');
-        const assistantMessage = await this.sendChatMessage(messageContent);
-        
-        this.chatHistory.push(assistantMessage);
-        this.updateChatHistory();
-        this.updateChatStatus('idle');
-
-    } catch (error) {
-        console.error('Error sending message:', error);
-        this.updateChatStatus('error');
-        
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        vscode.window.showErrorMessage(`Chat error: ${errorMessage}`);
     }
-}
 
-private sendChatMessage(content: string): Promise<ChatMessage> {
+    private sendChatMessage(content: string): Promise<ChatMessage> {
         return new Promise((resolve, reject) => {
             const requestData: OllamaChatRequest = {
                 model: this.currentModel!,
                 messages: this.chatHistory
-                    .filter(msg => msg.role !== 'system')
-                    .map(msg => ({ role: msg.role, content: msg.content }))
-                    .concat([{ role: 'user', content }]),
+                    .filter((msg) => msg.role !== "system")
+                    .map((msg) => ({ role: msg.role, content: msg.content }))
+                    .concat([{ role: "user", content }]),
                 stream: true,
                 options: {
-                    temperature: 0.7
-                }
-            };
-
-            const postData = JSON.stringify(requestData);
-            
-            const options = {
-                hostname: 'localhost',
-                port: 11434,
-                path: '/api/chat',
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(postData)
+                    temperature: 0.7,
                 },
-                timeout: 300000
-            };
+            }
+
+            const postData = JSON.stringify(requestData)
+
+            const options = {
+                hostname: "localhost",
+                port: 11434,
+                path: "/api/chat",
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(postData),
+                },
+                timeout: 300000,
+            }
 
             const assistantMessage: ChatMessage = {
                 id: Date.now().toString(),
-                role: 'assistant',
-                content: '',
+                role: "assistant",
+                content: "",
                 timestamp: Date.now(),
-                model: this.currentModel
-            };
+                model: this.currentModel,
+            }
 
             const req = http.request(options, (res) => {
-                let buffer = '';
+                let buffer = ""
 
-                res.on('data', (chunk) => {
-                    buffer += chunk.toString();
-                    
+                res.on("data", (chunk) => {
+                    buffer += chunk.toString()
+
                     // Process complete JSON lines
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
-                    
+                    const lines = buffer.split("\n")
+                    buffer = lines.pop() || "" // Keep incomplete line in buffer
+
                     for (const line of lines) {
                         if (line.trim()) {
                             try {
-                                const data = JSON.parse(line);
+                                const data = JSON.parse(line)
                                 if (data.message?.content) {
-                                    assistantMessage.content += data.message.content;
+                                    assistantMessage.content += data.message.content
                                     // Stream update to webview
-                                    this.streamMessageUpdate(assistantMessage);
+                                    this.streamMessageUpdate(assistantMessage)
                                 }
-                                
+
                                 if (data.done) {
-                                    resolve(assistantMessage);
-                                    return;
+                                    resolve(assistantMessage)
+                                    return
                                 }
                             } catch (parseError) {
-                                console.warn('Failed to parse streaming response:', parseError);
+                                console.warn("Failed to parse streaming response:", parseError)
                             }
                         }
                     }
-                });
+                })
 
-                res.on('end', () => {
-                    resolve(assistantMessage);
-                });
-            });
+                res.on("end", () => {
+                    resolve(assistantMessage)
+                })
+            })
 
-            req.on('error', (error) => {
-                reject(new Error(`Chat request failed: ${error.message}`));
-            });
+            req.on("error", (error) => {
+                reject(new Error(`Chat request failed: ${error.message}`))
+            })
 
-            req.on('timeout', () => {
-                req.destroy();
-                reject(new Error('Chat request timeout'));
-            });
+            req.on("timeout", () => {
+                req.destroy()
+                reject(new Error("Chat request timeout"))
+            })
 
-            req.write(postData);
-            req.end();
-        });
+            req.write(postData)
+            req.end()
+        })
     }
 
-// Add the web search method
-private async performWebSearch(query: string): Promise<Array<{title: string, url: string, snippet: string}>> {
-    // Simple web search implementation using DuckDuckGo Instant Answer API
-    return new Promise((resolve, reject) => {
-        const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-        
-        const options = {
-            timeout: 10000
-        };
+    // Add the web search method
+    private async performWebSearch(query: string): Promise<Array<{ title: string; url: string; snippet: string }>> {
+        // Simple web search implementation using DuckDuckGo Instant Answer API
+        return new Promise((resolve, reject) => {
+            const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
 
-        const url = require('url');
-        const parsedUrl = url.parse(searchUrl);
+            const options = {
+                timeout: 10000,
+            }
 
-        const requestOptions = {
-            hostname: parsedUrl.hostname,
-            port: parsedUrl.port || 443,
-            path: parsedUrl.path,
-            method: 'GET',
-            headers: {
-                'User-Agent': 'VSCortex/1.0 (VS Code Extension)'
-            },
-            timeout: options.timeout
-        };
+            const parsedUrl = url.parse(searchUrl)
 
-        const req = https.request(requestOptions, (res: any) => {
-            let data = '';
-            
-            res.on('data', (chunk: any) => {
-                data += chunk;
-            });
-            
-            res.on('end', () => {
-                try {
-                    const response = JSON.parse(data);
-                    const results: Array<{title: string, url: string, snippet: string}> = [];
-                    
-                    // Process DuckDuckGo results
-                    if (response.Abstract) {
-                        results.push({
-                            title: response.Heading || 'Search Result',
-                            url: response.AbstractURL || '',
-                            snippet: response.Abstract
-                        });
+            const requestOptions = {
+                hostname: parsedUrl.hostname,
+                port: parsedUrl.port || 443,
+                path: parsedUrl.path,
+                method: "GET",
+                headers: {
+                    "User-Agent": "VSCortex/1.0 (VS Code Extension)",
+                },
+                timeout: options.timeout,
+            }
+
+            const req = https.request(requestOptions, (res: any) => {
+                let data = ""
+
+                res.on("data", (chunk: any) => {
+                    data += chunk
+                })
+
+                res.on("end", () => {
+                    try {
+                        const response = JSON.parse(data)
+                        const results: Array<{ title: string; url: string; snippet: string }> = []
+
+                        // Process DuckDuckGo results
+                        if (response.Abstract) {
+                            results.push({
+                                title: response.Heading || "Search Result",
+                                url: response.AbstractURL || "",
+                                snippet: response.Abstract,
+                            })
+                        }
+
+                        if (response.RelatedTopics && response.RelatedTopics.length > 0) {
+                            response.RelatedTopics.slice(0, 3).forEach((topic: any) => {
+                                if (topic.Text && topic.FirstURL) {
+                                    results.push({
+                                        title: topic.Text.split(" - ")[0] || "Related Topic",
+                                        url: topic.FirstURL,
+                                        snippet: topic.Text,
+                                    })
+                                }
+                            })
+                        }
+
+                        resolve(results)
+                    } catch (parseError) {
+                        console.warn("Failed to parse search results:", parseError)
+                        resolve([]) // Return empty array instead of rejecting
                     }
-                    
-                    if (response.RelatedTopics && response.RelatedTopics.length > 0) {
-                        response.RelatedTopics.slice(0, 3).forEach((topic: any) => {
-                            if (topic.Text && topic.FirstURL) {
-                                results.push({
-                                    title: topic.Text.split(' - ')[0] || 'Related Topic',
-                                    url: topic.FirstURL,
-                                    snippet: topic.Text
-                                });
-                            }
-                        });
-                    }
-                    
-                    resolve(results);
-                } catch (parseError) {
-                    console.warn('Failed to parse search results:', parseError);
-                    resolve([]); // Return empty array instead of rejecting
-                }
-            });
-        });
+                })
+            })
 
-        req.on('error', (error: any) => {
-            console.warn('Web search request failed:', error);
-            resolve([]); // Return empty array instead of rejecting
-        });
+            req.on("error", (error: any) => {
+                console.warn("Web search request failed:", error)
+                resolve([]) // Return empty array instead of rejecting
+            })
 
-        req.on('timeout', () => {
-            req.destroy();
-            console.warn('Web search timeout');
-            resolve([]); // Return empty array instead of rejecting
-        });
+            req.on("timeout", () => {
+                req.destroy()
+                console.warn("Web search timeout")
+                resolve([]) // Return empty array instead of rejecting
+            })
 
-        req.end();
-    });
-}
+            req.end()
+        })
+    }
 
     private sendChatMessageGenerate(content: string): Promise<ChatMessage> {
-    return new Promise((resolve, reject) => {
-        // Build context from chat history for /api/generate
-        const contextMessages = this.chatHistory
-            .filter(msg => msg.role !== 'system')
-            .map(msg => `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`)
-            .join('\n\n');
-        
-        const fullPrompt = contextMessages 
-            ? `${contextMessages}\n\nHuman: ${content}\n\nAssistant:`
-            : `Human: ${content}\n\nAssistant:`;
+        return new Promise((resolve, reject) => {
+            // Build context from chat history for /api/generate
+            const contextMessages = this.chatHistory
+                .filter((msg) => msg.role !== "system")
+                .map((msg) => `${msg.role === "user" ? "Human" : "Assistant"}: ${msg.content}`)
+                .join("\n\n")
 
-        const requestData = {
-            model: this.currentModel!,
-            prompt: fullPrompt,
-            stream: true,
-            options: {
-                temperature: 0.7,
-                stop: ['Human:', '\nHuman:'] // Stop generation at next human input
-            }
-        };
+            const fullPrompt = contextMessages ? `${contextMessages}\n\nHuman: ${content}\n\nAssistant:` : `Human: ${content}\n\nAssistant:`
 
-        const postData = JSON.stringify(requestData);
-        
-        const options = {
-            hostname: 'localhost',
-            port: 11434,
-            path: '/api/generate', // Using generate API instead of chat
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(postData)
-            },
-            timeout: 300000 // 5 minutes
-        };
-
-        const assistantMessage: ChatMessage = {
-            id: Date.now().toString(),
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-            model: this.currentModel
-        };
-
-        let responseTimeout: NodeJS.Timeout | null = null;
-        let hasReceivedData = false;
-
-        const req = http.request(options, (res) => {
-            let buffer = '';
-            
-            if (responseTimeout) {
-                clearTimeout(responseTimeout);
-                responseTimeout = null;
+            const requestData = {
+                model: this.currentModel!,
+                prompt: fullPrompt,
+                stream: true,
+                options: {
+                    temperature: 0.7,
+                    stop: ["Human:", "\nHuman:"], // Stop generation at next human input
+                },
             }
 
-            res.on('data', (chunk) => {
-                hasReceivedData = true;
-                buffer += chunk.toString();
-                
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-                
-                for (const line of lines) {
-                    if (line.trim()) {
-                        try {
-                            const data = JSON.parse(line);
-                            if (data.response) {
-                                assistantMessage.content += data.response;
-                                this.streamMessageUpdate(assistantMessage);
+            const postData = JSON.stringify(requestData)
+
+            const options = {
+                hostname: "localhost",
+                port: 11434,
+                path: "/api/generate", // Using generate API instead of chat
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(postData),
+                },
+                timeout: 300000, // 5 minutes
+            }
+
+            const assistantMessage: ChatMessage = {
+                id: Date.now().toString(),
+                role: "assistant",
+                content: "",
+                timestamp: Date.now(),
+                model: this.currentModel,
+            }
+
+            let responseTimeout: NodeJS.Timeout | null = null
+            let hasReceivedData = false
+
+            const req = http.request(options, (res) => {
+                let buffer = ""
+
+                if (responseTimeout) {
+                    clearTimeout(responseTimeout)
+                    responseTimeout = null
+                }
+
+                res.on("data", (chunk) => {
+                    hasReceivedData = true
+                    buffer += chunk.toString()
+
+                    const lines = buffer.split("\n")
+                    buffer = lines.pop() || ""
+
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            try {
+                                const data = JSON.parse(line)
+                                if (data.response) {
+                                    assistantMessage.content += data.response
+                                    this.streamMessageUpdate(assistantMessage)
+                                }
+
+                                if (data.done) {
+                                    // Clean up any trailing whitespace and stop tokens
+                                    assistantMessage.content = assistantMessage.content.trim()
+                                    resolve(assistantMessage)
+                                    return
+                                }
+                            } catch (parseError) {
+                                console.warn("Failed to parse streaming response:", parseError)
                             }
-                            
-                            if (data.done) {
-                                // Clean up any trailing whitespace and stop tokens
-                                assistantMessage.content = assistantMessage.content.trim();
-                                resolve(assistantMessage);
-                                return;
-                            }
-                        } catch (parseError) {
-                            console.warn('Failed to parse streaming response:', parseError);
                         }
                     }
-                }
-            });
+                })
 
-            res.on('end', () => {
+                res.on("end", () => {
+                    if (!hasReceivedData) {
+                        reject(new Error("No data received from Ollama"))
+                    } else {
+                        resolve(assistantMessage)
+                    }
+                })
+            })
+
+            req.on("error", (error) => {
+                if (responseTimeout) {
+                    clearTimeout(responseTimeout)
+                }
+                reject(new Error(`Generate request failed: ${error.message}`))
+            })
+
+            req.on("timeout", () => {
+                req.destroy()
+                reject(new Error("Generate request timeout - model may be loading"))
+            })
+
+            responseTimeout = setTimeout(() => {
                 if (!hasReceivedData) {
-                    reject(new Error('No data received from Ollama'));
-                } else {
-                    resolve(assistantMessage);
+                    req.destroy()
+                    reject(new Error("No response from Ollama - check if model is loaded"))
                 }
-            });
-        });
+            }, 180000) // 3 minutes
 
-        req.on('error', (error) => {
-            if (responseTimeout) {
-                clearTimeout(responseTimeout);
-            }
-            reject(new Error(`Generate request failed: ${error.message}`));
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-            reject(new Error('Generate request timeout - model may be loading'));
-        });
-
-        responseTimeout = setTimeout(() => {
-            if (!hasReceivedData) {
-                req.destroy();
-                reject(new Error('No response from Ollama - check if model is loaded'));
-            }
-        }, 180000); // 3 minutes
-
-        req.write(postData);
-        req.end();
-    });
-}
-
-    private clearChatHistory(): void {
-        this.chatHistory = [];
-        this.updateChatHistory();
+            req.write(postData)
+            req.end()
+        })
     }
 
-    private updateConnectionStatus(status: 'connecting' | 'connected' | 'error'): void {
-        if (!this.webviewView) return;
-        
+    private clearChatHistory(): void {
+        this.chatHistory = []
+        this.updateChatHistory()
+    }
+
+    private updateConnectionStatus(status: "connecting" | "connected" | "error"): void {
+        if (!this.webviewView) return
+
         this.webviewView.webview.postMessage({
-            command: 'updateConnectionStatus',
-            status: status
-        });
+            command: "updateConnectionStatus",
+            status: status,
+        })
     }
 
     private updateModelsList(models: OllamaModel[]): void {
-        if (!this.webviewView) return;
-        
+        if (!this.webviewView) return
+
         this.webviewView.webview.postMessage({
-            command: 'updateModelsList',
-            models: models
-        });
+            command: "updateModelsList",
+            models: models,
+        })
     }
 
     private updateChatHistory(): void {
-        if (!this.webviewView) return;
-        
+        if (!this.webviewView) return
+
         this.webviewView.webview.postMessage({
-            command: 'updateChatHistory',
-            messages: this.chatHistory
-        });
+            command: "updateChatHistory",
+            messages: this.chatHistory,
+        })
     }
 
     private streamMessageUpdate(message: ChatMessage): void {
-        if (!this.webviewView) return;
-        
+        if (!this.webviewView) return
+
         this.webviewView.webview.postMessage({
-            command: 'streamMessageUpdate',
-            message: message
-        });
+            command: "streamMessageUpdate",
+            message: message,
+        })
     }
 
-    private updateChatStatus(status: 'idle' | 'generating' | 'error'): void {
-        if (!this.webviewView) return;
-        
+    private updateChatStatus(status: "idle" | "generating" | "error"): void {
+        if (!this.webviewView) return
+
         this.webviewView.webview.postMessage({
-            command: 'updateChatStatus',
-            status: status
-        });
+            command: "updateChatStatus",
+            status: status,
+        })
     }
 
     private getHtml(webview: vscode.Webview): string {
         try {
             // Get paths to webview files
-            const webviewPath = vscode.Uri.joinPath(this.extensionUri, 'webview');
-            const htmlPath = vscode.Uri.joinPath(webviewPath, 'chat.html');
-            const cssPath = vscode.Uri.joinPath(webviewPath, 'styles.css');
-            const scriptPath = vscode.Uri.joinPath(webviewPath, 'script.js');
+            const webviewPath = vscode.Uri.joinPath(this.extensionUri, "webview")
+            const htmlPath = vscode.Uri.joinPath(webviewPath, "chat.html")
+            const cssPath = vscode.Uri.joinPath(webviewPath, "styles.css")
+            const scriptPath = vscode.Uri.joinPath(webviewPath, "script.js")
 
             // Convert to webview URIs
-            const cssUri = webview.asWebviewUri(cssPath);
-            const scriptUri = webview.asWebviewUri(scriptPath);
+            const cssUri = webview.asWebviewUri(cssPath)
+            const scriptUri = webview.asWebviewUri(scriptPath)
 
             // Read HTML file
-            let html = fs.readFileSync(htmlPath.fsPath, 'utf8');
+            let html = fs.readFileSync(htmlPath.fsPath, "utf8")
 
             // Replace placeholders with actual URIs
-            html = html.replace('{{cssUri}}', cssUri.toString());
-            html = html.replace('{{scriptUri}}', scriptUri.toString());
+            html = html.replace("{{cssUri}}", cssUri.toString())
+            html = html.replace("{{scriptUri}}", scriptUri.toString())
 
-            return html;
+            return html
         } catch (error) {
-            console.error('Failed to load webview files:', error);
+            console.error("Failed to load webview files:", error)
             // Fallback to inline HTML if files don't exist
-            return this.getFallbackHtml();
+            return this.getFallbackHtml()
         }
     }
 
@@ -631,39 +622,35 @@ private async performWebSearch(query: string): Promise<Array<{title: string, url
                 </div>
             </body>
             </html>
-        `;
+        `
     }
 }
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+    // Use the console to output diagnostic information (console.log) and errors (console.error)
+    // This line of code will only be executed once when your extension is activated
+    console.log('Congratulations, your extension "vscortex" is now active!')
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "vscortex" is now active!');
+    // The command has been defined in the package.json file
+    // Now provide the implementation of the command with registerCommand
+    // The commandId parameter must match the command field in package.json
+    const disposable = vscode.commands.registerCommand("vscortex.helloWorld", () => {
+        // The code you place here will be executed every time your command is executed
+        // Display a message box to the user
+        vscode.window.showInformationMessage("Hello World from VSCortex! IT IS ME!!!")
+    })
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('vscortex.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from VSCortex! IT IS ME!!!');
-	});
+    context.subscriptions.push(disposable)
 
-	context.subscriptions.push(disposable);
-
-    const provider = new VSCortexChatViewProvider(context.extensionUri);
+    const provider = new VSCortexChatViewProvider(context.extensionUri)
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(
-            VSCortexChatViewProvider.viewType,
-            provider,
-            { webviewOptions: { retainContextWhenHidden: true } }
-        )
-    );
-    console.log('Provider registered for', VSCortexChatViewProvider.viewType);
-
+        vscode.window.registerWebviewViewProvider(VSCortexChatViewProvider.viewType, provider, {
+            webviewOptions: { retainContextWhenHidden: true },
+        })
+    )
+    console.log("Provider registered for", VSCortexChatViewProvider.viewType)
 }
 
 // This method is called when your extension is deactivated
