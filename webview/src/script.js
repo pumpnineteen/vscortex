@@ -1,54 +1,124 @@
 "use strict";
-function renderMarkdown(content) {
-    try {
-        let html = marked.parse(content);
-        html = html.replace(/<pre><code class="hljs language-(\w+)">([\s\S]*?)<\/code><\/pre>/g, (match, lang, code) => {
+Object.defineProperty(exports, "__esModule", { value: true });
+// Simple markdown renderer class
+class SimpleMarkdownRenderer {
+    codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    inlineCodeRegex = /`([^`]+)`/g;
+    boldRegex = /\*\*(.*?)\*\*/g;
+    italicRegex = /\*(.*?)\*/g;
+    linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    headerRegex = /^(#{1,6})\s+(.+)$/gm;
+    listItemRegex = /^[\s]*[-*+]\s+(.+)$/gm;
+    numberedListRegex = /^[\s]*\d+\.\s+(.+)$/gm;
+    render(markdown) {
+        let html = markdown;
+        // Handle code blocks first (before inline code)
+        html = html.replace(this.codeBlockRegex, (match, language, code) => {
+            const lang = language || '';
+            const escapedCode = this.escapeHtml(code.trim());
             return `<div class="code-block">
-                    <div class="code-header">
-                        <span class="code-language">${lang}</span>
-                        <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
-                    </div>
-                    <pre><code class="hljs language-${lang}">${code}</code></pre>
-                </div>`;
+                <div class="code-header">
+                    <span class="code-language">${lang}</span>
+                    <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
+                </div>
+                <pre><code class="language-${lang}">${escapedCode}</code></pre>
+            </div>`;
         });
-        html = html.replace(/<pre><code class="hljs">([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
-            return `<div class="code-block">
-                    <div class="code-header">
-                        <span class="code-language">text</span>
-                        <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
-                    </div>
-                    <pre><code class="hljs">${code}</code></pre>
-                </div>`;
+        // Handle inline code
+        html = html.replace(this.inlineCodeRegex, (match, code) => {
+            return `<code class="inline-code">${this.escapeHtml(code)}</code>`;
         });
-        html = html.replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, (match, code) => {
-            return `<div class="code-block">
-                    <div class="code-header">
-                        <span class="code-language">text</span>
-                        <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
-                    </div>
-                    <pre><code>${code}</code></pre>
-                </div>`;
+        // Handle headers
+        html = html.replace(this.headerRegex, (match, hashes, content) => {
+            const level = hashes.length;
+            return `<h${level} class="markdown-header">${content.trim()}</h${level}>`;
         });
+        // Handle bold text
+        html = html.replace(this.boldRegex, '<strong>$1</strong>');
+        // Handle italic text (after bold to avoid conflicts)
+        html = html.replace(this.italicRegex, '<em>$1</em>');
+        // Handle links
+        html = html.replace(this.linkRegex, '<a href="$2" target="_blank" class="markdown-link">$1</a>');
+        // Handle unordered lists
+        html = html.replace(this.listItemRegex, '<li class="markdown-list-item">$1</li>');
+        html = this.wrapConsecutiveItems(html, 'li class="markdown-list-item"', 'ul', 'markdown-list');
+        // Handle ordered lists
+        html = html.replace(this.numberedListRegex, '<li class="markdown-numbered-item">$1</li>');
+        html = this.wrapConsecutiveItems(html, 'li class="markdown-numbered-item"', 'ol', 'markdown-numbered-list');
+        // Handle line breaks and paragraphs
+        html = html.replace(/\n\n/g, '</p><p class="markdown-paragraph">');
+        html = html.replace(/\n/g, '<br>');
+        // Wrap in paragraph if not already wrapped
+        if (!html.includes('<p class="markdown-paragraph">')) {
+            html = `<p class="markdown-paragraph">${html}</p>`;
+        }
+        else {
+            html = `<p class="markdown-paragraph">${html}</p>`;
+        }
         return html;
     }
-    catch (error) {
-        console.error('Markdown parsing error:', error);
-        return escapeHtml(content);
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    wrapConsecutiveItems(html, itemTag, wrapperTag, wrapperClass) {
+        // Simple implementation - can be enhanced
+        const regex = new RegExp(`(<${itemTag}>.*?</li>)+`, 'g');
+        return html.replace(regex, `<${wrapperTag} class="${wrapperClass}">// TypeScript interfaces for webview environment (browser-like, no Node.js)
+interface VSCodeAPI {
+    postMessage(message: any): void;
+    getState(): any;
+    setState(state: any): void;
+}
+
+interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    timestamp: number;
+    model?: string;
+}
+
+interface OllamaModel {
+    name: string;
+    model: string;
+    modified_at: string;
+    size: number;
+    digest: string;
+    details: {
+        parent_model: string;
+        format: string;
+        family: string;
+        families: string[];
+        parameter_size: string;
+        quantization_level: string;
+    };
+}
+
+interface WebviewMessage {
+    command: string;
+    [key: string]: any;
+}</${wrapperTag}>`);
     }
 }
 const vscode = acquireVsCodeApi();
+const markdownRenderer = new SimpleMarkdownRenderer();
 let selectedModel = null;
 let chatMessages = [];
 let isGenerating = false;
+// Get state from vscode API
 let state = vscode.getState() || { selectedModel: null, chatMessages: [] };
 selectedModel = state.selectedModel;
 chatMessages = state.chatMessages || [];
+// Initialize when DOM loads
 document.addEventListener('DOMContentLoaded', function () {
     initializeEventListeners();
     updateChatDisplay();
     updateSendButtonState();
 });
 function initializeEventListeners() {
+    // Auto-resize textarea
     const chatInput = document.getElementById('chatInput');
     if (chatInput) {
         chatInput.addEventListener('input', function () {
@@ -56,6 +126,7 @@ function initializeEventListeners() {
             this.style.height = Math.min(this.scrollHeight, 120) + 'px';
             updateSendButtonState();
         });
+        // Handle Enter key
         chatInput.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -63,6 +134,7 @@ function initializeEventListeners() {
             }
         });
     }
+    // Listen for input changes to update send button
     const inputElement = document.getElementById('chatInput');
     if (inputElement) {
         inputElement.addEventListener('input', updateSendButtonState);
@@ -85,6 +157,7 @@ function refreshModels() {
 function selectModel(modelName) {
     selectedModel = modelName;
     vscode.setState({ selectedModel: modelName, chatMessages: chatMessages });
+    // Update UI
     document.querySelectorAll('.model-item').forEach(item => {
         item.classList.remove('selected');
     });
@@ -97,7 +170,7 @@ function selectModel(modelName) {
         model: modelName
     });
     updateSendButtonState();
-    updateChatDisplay();
+    updateChatDisplay(); // Update empty state message
 }
 function sendMessage() {
     const input = document.getElementById('chatInput');
@@ -155,10 +228,12 @@ function updateChatDisplay() {
     }
     messagesContainer.innerHTML = chatMessages.map(msg => {
         let content = msg.content;
+        // Render markdown for assistant messages and user messages with code
         if (msg.role === 'assistant' || (msg.role === 'user' && (content.includes('```') || content.includes('`')))) {
-            content = renderMarkdown(content);
+            content = markdownRenderer.render(content);
         }
         else {
+            // For regular user messages, just escape HTML
             content = escapeHtml(content);
         }
         const markdownClass = (msg.role === 'assistant' || content.includes('<code')) ? 'markdown' : '';
@@ -172,6 +247,7 @@ function updateChatDisplay() {
             </div>
         `;
     }).join('');
+    // Scroll to bottom
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 function escapeHtml(text) {
@@ -191,6 +267,7 @@ function formatDate(dateString) {
     const date = new Date(dateString);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+// Handle messages from extension
 window.addEventListener('message', (event) => {
     const message = event.data;
     switch (message.command) {
@@ -206,6 +283,7 @@ window.addEventListener('message', (event) => {
             updateChatDisplay();
             break;
         case 'streamMessageUpdate':
+            // Find and update the streaming message
             const msgIndex = chatMessages.findIndex(m => m.id === message.message.id);
             if (msgIndex !== -1) {
                 chatMessages[msgIndex] = message.message;
@@ -295,6 +373,7 @@ function updateChatStatus(status) {
     updateSendButtonState();
 }
 console.log('VSCortex Chat webview loaded successfully');
+// Global function for copying code
 function copyCode(button) {
     const codeBlock = button.closest('.code-block');
     if (codeBlock) {
@@ -307,6 +386,7 @@ function copyCode(button) {
                     button.textContent = originalText;
                 }, 2000);
             }).catch(() => {
+                // Fallback for older browsers
                 const textArea = document.createElement('textarea');
                 textArea.value = code.textContent || '';
                 document.body.appendChild(textArea);
@@ -322,8 +402,10 @@ function copyCode(button) {
         }
     }
 }
+// Make functions globally available for onclick handlers
 window.refreshModels = refreshModels;
 window.selectModel = selectModel;
 window.sendMessage = sendMessage;
 window.clearChat = clearChat;
 window.copyCode = copyCode;
+//# sourceMappingURL=script.js.map

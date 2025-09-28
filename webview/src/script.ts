@@ -41,119 +41,61 @@ interface WebSearchResult {
     snippet: string;
 }
 
-// Simple markdown renderer class
-class SimpleMarkdownRenderer {
-    private codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    private inlineCodeRegex = /`([^`]+)`/g;
-    private boldRegex = /\*\*(.*?)\*\*/g;
-    private italicRegex = /\*(.*?)\*/g;
-    private linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    private headerRegex = /^(#{1,6})\s+(.+)$/gm;
-    private listItemRegex = /^[\s]*[-*+]\s+(.+)$/gm;
-    private numberedListRegex = /^[\s]*\d+\.\s+(.+)$/gm;
+declare const marked: {
+    parse(markdown: string): string;
+    setOptions(options: any): void;
+};
 
-    render(markdown: string): string {
-        let html = markdown;
+declare const hljs: {
+    highlight(code: string, options: { language: string }): { value: string };
+    highlightAuto(code: string): { value: string };
+    getLanguage(name: string): any;
+};
 
-        // Handle code blocks first (before inline code)
-        html = html.replace(this.codeBlockRegex, (match, language, code) => {
-            const lang = language || '';
-            const escapedCode = this.escapeHtml(code.trim());
-            return `<div class="code-block">
-                <div class="code-header">
-                    <span class="code-language">${lang}</span>
-                    <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
-                </div>
-                <pre><code class="language-${lang}">${escapedCode}</code></pre>
-            </div>`;
-        });
+function renderMarkdown(content: string): string {
+    try {
+        let html = marked.parse(content);
+        
+        // Add copy buttons to highlighted code blocks
+        html = html.replace(/<pre><code class="hljs language-(\w+)">([\s\S]*?)<\/code><\/pre>/g, 
+            (match, lang, code) => {
+                return `<div class="code-block">
+                    <div class="code-header">
+                        <span class="code-language">${lang}</span>
+                        <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><code class="hljs language-${lang}">${code}</code></pre>
+                </div>`;
+            });
+            
+        // Handle code blocks without language highlighting
+        html = html.replace(/<pre><code class="hljs">([\s\S]*?)<\/code><\/pre>/g, 
+            (match, code) => {
+                return `<div class="code-block">
+                    <div class="code-header">
+                        <span class="code-language">text</span>
+                        <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><code class="hljs">${code}</code></pre>
+                </div>`;
+            });
 
-        // Handle inline code
-        html = html.replace(this.inlineCodeRegex, (match, code) => {
-            return `<code class="inline-code">${this.escapeHtml(code)}</code>`;
-        });
-
-        // Handle headers
-        html = html.replace(this.headerRegex, (match, hashes, content) => {
-            const level = hashes.length;
-            return `<h${level} class="markdown-header">${content.trim()}</h${level}>`;
-        });
-
-        // Handle bold text
-        html = html.replace(this.boldRegex, '<strong>$1</strong>');
-
-        // Handle italic text (after bold to avoid conflicts)
-        html = html.replace(this.italicRegex, '<em>$1</em>');
-
-        // Handle links
-        html = html.replace(this.linkRegex, '<a href="$2" target="_blank" class="markdown-link">$1</a>');
-
-        // Handle unordered lists
-        html = html.replace(this.listItemRegex, '<li class="markdown-list-item">$1</li>');
-        html = this.wrapConsecutiveItems(html, 'li class="markdown-list-item"', 'ul', 'markdown-list');
-
-        // Handle ordered lists
-        html = html.replace(this.numberedListRegex, '<li class="markdown-numbered-item">$1</li>');
-        html = this.wrapConsecutiveItems(html, 'li class="markdown-numbered-item"', 'ol', 'markdown-numbered-list');
-
-        // Handle line breaks and paragraphs
-        html = html.replace(/\n\n/g, '</p><p class="markdown-paragraph">');
-        html = html.replace(/\n/g, '<br>');
-
-        // Wrap in paragraph if not already wrapped
-        if (!html.includes('<p class="markdown-paragraph">')) {
-            html = `<p class="markdown-paragraph">${html}</p>`;
-        } else {
-            html = `<p class="markdown-paragraph">${html}</p>`;
-        }
-
+        // Handle plain code blocks (fallback)
+        html = html.replace(/<pre><code>([\s\S]*?)<\/code><\/pre>/g, 
+            (match, code) => {
+                return `<div class="code-block">
+                    <div class="code-header">
+                        <span class="code-language">text</span>
+                        <button class="copy-code-btn" onclick="copyCode(this)">Copy</button>
+                    </div>
+                    <pre><code>${code}</code></pre>
+                </div>`;
+            });
+        
         return html;
-    }
-
-    private escapeHtml(text: string): string {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    private wrapConsecutiveItems(html: string, itemTag: string, wrapperTag: string, wrapperClass: string): string {
-        // Simple implementation - can be enhanced
-        const regex = new RegExp(`(<${itemTag}>.*?</li>)+`, 'g');
-        return html.replace(regex, `<${wrapperTag} class="${wrapperClass}">// TypeScript interfaces for webview environment (browser-like, no Node.js)
-interface VSCodeAPI {
-    postMessage(message: any): void;
-    getState(): any;
-    setState(state: any): void;
-}
-
-interface ChatMessage {
-    id: string;
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    timestamp: number;
-    model?: string;
-}
-
-interface OllamaModel {
-    name: string;
-    model: string;
-    modified_at: string;
-    size: number;
-    digest: string;
-    details: {
-        parent_model: string;
-        format: string;
-        family: string;
-        families: string[];
-        parameter_size: string;
-        quantization_level: string;
-    };
-}
-
-interface WebviewMessage {
-    command: string;
-    [key: string]: any;
-}</${wrapperTag}>`);
+    } catch (error) {
+        console.error('Markdown parsing error:', error);
+        return escapeHtml(content); // Fallback to escaped HTML
     }
 }
 
@@ -161,7 +103,6 @@ interface WebviewMessage {
 declare const acquireVsCodeApi: () => VSCodeAPI;
 
 const vscode: VSCodeAPI = acquireVsCodeApi();
-const markdownRenderer = new SimpleMarkdownRenderer();
 let selectedModel: string | null = null;
 let chatMessages: ChatMessage[] = [];
 let isGenerating: boolean = false;
@@ -312,7 +253,7 @@ function updateChatDisplay(): void {
         
         // Render markdown for assistant messages and user messages with code
         if (msg.role === 'assistant' || (msg.role === 'user' && (content.includes('```') || content.includes('`')))) {
-            content = markdownRenderer.render(content);
+            content = renderMarkdown(content); // Changed from markdownRenderer.render(content)
         } else {
             // For regular user messages, just escape HTML
             content = escapeHtml(content);

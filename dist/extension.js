@@ -36,6 +36,7 @@ __export(extension_exports, {
 module.exports = __toCommonJS(extension_exports);
 var vscode = __toESM(require("vscode"));
 var http = __toESM(require("http"));
+var https = __toESM(require("https"));
 var fs = __toESM(require("fs"));
 var VSCortexChatViewProvider = class {
   constructor(extensionUri) {
@@ -75,6 +76,9 @@ var VSCortexChatViewProvider = class {
             break;
           case "alert":
             vscode.window.showInformationMessage(message.text);
+            break;
+          case "sendMessage":
+            await this.handleSendMessage(message.content, message.includeContext, message.webSearch);
             break;
         }
       },
@@ -136,7 +140,7 @@ var VSCortexChatViewProvider = class {
       req.end();
     });
   }
-  async handleSendMessage(content, includeContext) {
+  async handleSendMessage(content, includeContext, webSearch) {
     if (!this.currentModel) {
       vscode.window.showErrorMessage("Please select a model first");
       return;
@@ -154,6 +158,25 @@ ${selectedText}
 \`\`\`
 
 Question: ${content}`;
+        }
+      }
+      if (webSearch) {
+        try {
+          const searchResults = await this.performWebSearch(content);
+          if (searchResults.length > 0) {
+            const searchContext = searchResults.map(
+              (result) => `**${result.title}**
+${result.snippet}
+Source: ${result.url}`
+            ).join("\n\n");
+            messageContent = `Web Search Results:
+${searchContext}
+
+Based on the above information, please answer: ${content}`;
+          }
+        } catch (error) {
+          console.warn("Web search failed:", error);
+          vscode.window.showWarningMessage("Web search failed, continuing without search results");
         }
       }
       const userMessage = {
@@ -242,6 +265,71 @@ Question: ${content}`;
         reject(new Error("Chat request timeout"));
       });
       req.write(postData);
+      req.end();
+    });
+  }
+  // Add the web search method
+  async performWebSearch(query) {
+    return new Promise((resolve, reject) => {
+      const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+      const options = {
+        timeout: 1e4
+      };
+      const url = require("url");
+      const parsedUrl = url.parse(searchUrl);
+      const requestOptions = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 443,
+        path: parsedUrl.path,
+        method: "GET",
+        headers: {
+          "User-Agent": "VSCortex/1.0 (VS Code Extension)"
+        },
+        timeout: options.timeout
+      };
+      const req = https.request(requestOptions, (res) => {
+        let data = "";
+        res.on("data", (chunk) => {
+          data += chunk;
+        });
+        res.on("end", () => {
+          try {
+            const response = JSON.parse(data);
+            const results = [];
+            if (response.Abstract) {
+              results.push({
+                title: response.Heading || "Search Result",
+                url: response.AbstractURL || "",
+                snippet: response.Abstract
+              });
+            }
+            if (response.RelatedTopics && response.RelatedTopics.length > 0) {
+              response.RelatedTopics.slice(0, 3).forEach((topic) => {
+                if (topic.Text && topic.FirstURL) {
+                  results.push({
+                    title: topic.Text.split(" - ")[0] || "Related Topic",
+                    url: topic.FirstURL,
+                    snippet: topic.Text
+                  });
+                }
+              });
+            }
+            resolve(results);
+          } catch (parseError) {
+            console.warn("Failed to parse search results:", parseError);
+            resolve([]);
+          }
+        });
+      });
+      req.on("error", (error) => {
+        console.warn("Web search request failed:", error);
+        resolve([]);
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        console.warn("Web search timeout");
+        resolve([]);
+      });
       req.end();
     });
   }

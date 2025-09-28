@@ -2,6 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import * as http from 'http';
+import * as https from 'https';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -92,6 +93,9 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                     case 'alert':
                         vscode.window.showInformationMessage(message.text);
                         break;
+                    case 'sendMessage':
+                        await this.handleSendMessage(message.content, message.includeContext, message.webSearch);
+                        break;
                 }
             },
             undefined,
@@ -169,54 +173,71 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    private async handleSendMessage(content: string, includeContext: boolean): Promise<void> {
-        if (!this.currentModel) {
-            vscode.window.showErrorMessage('Please select a model first');
-            return;
-        }
-
-        try {
-            // Add context from selected code if requested
-            let messageContent = content;
-            if (includeContext) {
-                const editor = vscode.window.activeTextEditor;
-                if (editor && editor.selection && !editor.selection.isEmpty) {
-                    const selectedText = editor.document.getText(editor.selection);
-                    const fileName = editor.document.fileName;
-                    messageContent = `Context from ${fileName}:\n\`\`\`\n${selectedText}\n\`\`\`\n\nQuestion: ${content}`;
-                }
-            }
-
-            // Add user message to history
-            const userMessage: ChatMessage = {
-                id: Date.now().toString(),
-                role: 'user',
-                content: messageContent,
-                timestamp: Date.now(),
-                model: this.currentModel
-            };
-            
-            this.chatHistory.push(userMessage);
-            this.updateChatHistory();
-
-            // Start streaming response
-            this.updateChatStatus('generating');
-            const assistantMessage = await this.sendChatMessage(messageContent);
-            
-            this.chatHistory.push(assistantMessage);
-            this.updateChatHistory();
-            this.updateChatStatus('idle');
-
-        } catch (error) {
-            console.error('Error sending message:', error);
-            this.updateChatStatus('error');
-            
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            vscode.window.showErrorMessage(`Chat error: ${errorMessage}`);
-        }
+    private async handleSendMessage(content: string, includeContext: boolean, webSearch?: boolean): Promise<void> {
+    if (!this.currentModel) {
+        vscode.window.showErrorMessage('Please select a model first');
+        return;
     }
 
-    private sendChatMessage(content: string): Promise<ChatMessage> {
+    try {
+        // Add context from selected code if requested
+        let messageContent = content;
+        if (includeContext) {
+            const editor = vscode.window.activeTextEditor;
+            if (editor && editor.selection && !editor.selection.isEmpty) {
+                const selectedText = editor.document.getText(editor.selection);
+                const fileName = editor.document.fileName;
+                messageContent = `Context from ${fileName}:\n\`\`\`\n${selectedText}\n\`\`\`\n\nQuestion: ${content}`;
+            }
+        }
+
+        // Add web search results if requested
+        if (webSearch) {
+            try {
+                const searchResults = await this.performWebSearch(content);
+                if (searchResults.length > 0) {
+                    const searchContext = searchResults.map(result => 
+                        `**${result.title}**\n${result.snippet}\nSource: ${result.url}`
+                    ).join('\n\n');
+                    
+                    messageContent = `Web Search Results:\n${searchContext}\n\nBased on the above information, please answer: ${content}`;
+                }
+            } catch (error) {
+                console.warn('Web search failed:', error);
+                vscode.window.showWarningMessage('Web search failed, continuing without search results');
+            }
+        }
+
+        // Add user message to history
+        const userMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: messageContent,
+            timestamp: Date.now(),
+            model: this.currentModel
+        };
+        
+        this.chatHistory.push(userMessage);
+        this.updateChatHistory();
+
+        // Start streaming response
+        this.updateChatStatus('generating');
+        const assistantMessage = await this.sendChatMessage(messageContent);
+        
+        this.chatHistory.push(assistantMessage);
+        this.updateChatHistory();
+        this.updateChatStatus('idle');
+
+    } catch (error) {
+        console.error('Error sending message:', error);
+        this.updateChatStatus('error');
+        
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        vscode.window.showErrorMessage(`Chat error: ${errorMessage}`);
+    }
+}
+
+private sendChatMessage(content: string): Promise<ChatMessage> {
         return new Promise((resolve, reject) => {
             const requestData: OllamaChatRequest = {
                 model: this.currentModel!,
@@ -301,6 +322,86 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
             req.end();
         });
     }
+
+// Add the web search method
+private async performWebSearch(query: string): Promise<Array<{title: string, url: string, snippet: string}>> {
+    // Simple web search implementation using DuckDuckGo Instant Answer API
+    return new Promise((resolve, reject) => {
+        const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+        
+        const options = {
+            timeout: 10000
+        };
+
+        const url = require('url');
+        const parsedUrl = url.parse(searchUrl);
+
+        const requestOptions = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || 443,
+            path: parsedUrl.path,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'VSCortex/1.0 (VS Code Extension)'
+            },
+            timeout: options.timeout
+        };
+
+        const req = https.request(requestOptions, (res: any) => {
+            let data = '';
+            
+            res.on('data', (chunk: any) => {
+                data += chunk;
+            });
+            
+            res.on('end', () => {
+                try {
+                    const response = JSON.parse(data);
+                    const results: Array<{title: string, url: string, snippet: string}> = [];
+                    
+                    // Process DuckDuckGo results
+                    if (response.Abstract) {
+                        results.push({
+                            title: response.Heading || 'Search Result',
+                            url: response.AbstractURL || '',
+                            snippet: response.Abstract
+                        });
+                    }
+                    
+                    if (response.RelatedTopics && response.RelatedTopics.length > 0) {
+                        response.RelatedTopics.slice(0, 3).forEach((topic: any) => {
+                            if (topic.Text && topic.FirstURL) {
+                                results.push({
+                                    title: topic.Text.split(' - ')[0] || 'Related Topic',
+                                    url: topic.FirstURL,
+                                    snippet: topic.Text
+                                });
+                            }
+                        });
+                    }
+                    
+                    resolve(results);
+                } catch (parseError) {
+                    console.warn('Failed to parse search results:', parseError);
+                    resolve([]); // Return empty array instead of rejecting
+                }
+            });
+        });
+
+        req.on('error', (error: any) => {
+            console.warn('Web search request failed:', error);
+            resolve([]); // Return empty array instead of rejecting
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            console.warn('Web search timeout');
+            resolve([]); // Return empty array instead of rejecting
+        });
+
+        req.end();
+    });
+}
 
     private sendChatMessageGenerate(content: string): Promise<ChatMessage> {
     return new Promise((resolve, reject) => {
