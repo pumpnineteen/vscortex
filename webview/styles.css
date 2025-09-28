@@ -347,3 +347,163 @@ body {
     0%, 100% { opacity: 0.3; }
     50% { opacity: 1; }
 }
+
+/* Markdown Styles */
+.markdown-content {
+    line-height: 1.6;
+}
+
+.markdown-paragraph {
+    margin: 0 0 12px 0;
+}
+
+.markdown-header {
+    margin: 16px 0 8px 0;
+    color: var(--vscode-editor-foreground);
+    border-bottom: 1px solid var(--vscode-panel-border);
+    padding-bottom: 4px;
+}
+
+.markdown-header:first-child {
+    margin-top: 0;
+}
+
+.code-block {
+    margin: 12px 0;
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    background-color: var(--vscode-textCodeBlock-background);
+    overflow: hidden;
+}
+
+.code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: var(--vscode-editorGroupHeader-tabsBackground);
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.code-language {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+}
+
+.copy-code-btn {
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.copy-code-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.code-block pre {
+    margin: 0;
+    padding: 12px;
+    overflow-x: auto;
+    font-family: var(--vscode-editor-font-family, 'Consolas', 'Monaco', 'Courier New', monospace);
+    font-size: var(--vscode-editor-font-size, 14px);
+    background: transparent;
+}
+
+.code-block code {
+    font-family: inherit;
+    font-size: inherit;
+    background: transparent !important;
+    padding: 0;
+    border: none;
+}
+
+/* Override highlight.js styles to match VS Code theme */
+.code-block .hljs {
+    background: transparent !important;
+    padding: 0 !important;
+}
+
+.inline-code {
+    background-color: var(--vscode-textCodeBlock-background);
+    color: var(--vscode-textPreformat-foreground);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: var(--vscode-editor-font-family, 'Consolas', 'Monaco', 'Courier New', monospace);
+    font-size: 0.9em;
+    border: 1px solid var(--vscode-panel-border);
+}
+
+.markdown-list, .markdown-numbered-list {
+    margin: 8px 0;
+    padding-left: 24px;
+}
+
+.markdown-list-item, .markdown-numbered-item {
+    margin: 4px 0;
+}
+
+.markdown-link {
+    color: var(--vscode-textLink-foreground);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+
+.markdown-link:hover {
+    border-bottom-color: var(--vscode-textLink-foreground);
+}
+
+.markdown-link:visited {
+    color: var(--vscode-textLink-foreground);
+}
+
+/* Enhanced message content for markdown */
+.message-content.markdown {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.message.assistant .message-content {
+    white-space: normal; /* Allow markdown rendering instead of pre-wrap */
+}
+
+/* Tables (GitHub Flavored Markdown) */
+.markdown table {
+    border-collapse: collapse;
+    margin: 12px 0;
+    width: 100%;
+}
+
+.markdown th, .markdown td {
+    border: 1px solid var(--vscode-panel-border);
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.markdown th {
+    background-color: var(--vscode-list-inactiveSelectionBackground);
+    font-weight: 600;
+}
+
+/* Blockquotes */
+.markdown blockquote {
+    margin: 12px 0;
+    padding: 8px 16px;
+    border-left: 4px solid var(--vscode-textLink-foreground);
+    background-color: var(--vscode-list-inactiveSelectionBackground);
+    font-style: italic;
+}
+
+/* Horizontal rules */
+.markdown hr {
+    border: none;
+    border-top: 1px solid var(--vscode-panel-border);
+    margin: 16px 0;
+}

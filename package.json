@@ -53,7 +53,10 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "compile-webview": "cd webview && tsc src/script.ts --outDir . --target ES2020 --lib ES2020,DOM",
+    "watch-webview": "cd webview && tsc src/script.ts --outDir . --target ES2020 --lib ES2020,DOM --watch",
+    "build-all": "npm run compile && npm run compile-webview"
   },
   "devDependencies": {
     "@types/vscode": "^1.104.0",

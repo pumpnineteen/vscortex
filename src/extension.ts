@@ -241,7 +241,7 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(postData)
                 },
-                timeout: 30000
+                timeout: 300000
             };
 
             const assistantMessage: ChatMessage = {
@@ -301,6 +301,123 @@ class VSCortexChatViewProvider implements vscode.WebviewViewProvider {
             req.end();
         });
     }
+
+    private sendChatMessageGenerate(content: string): Promise<ChatMessage> {
+    return new Promise((resolve, reject) => {
+        // Build context from chat history for /api/generate
+        const contextMessages = this.chatHistory
+            .filter(msg => msg.role !== 'system')
+            .map(msg => `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`)
+            .join('\n\n');
+        
+        const fullPrompt = contextMessages 
+            ? `${contextMessages}\n\nHuman: ${content}\n\nAssistant:`
+            : `Human: ${content}\n\nAssistant:`;
+
+        const requestData = {
+            model: this.currentModel!,
+            prompt: fullPrompt,
+            stream: true,
+            options: {
+                temperature: 0.7,
+                stop: ['Human:', '\nHuman:'] // Stop generation at next human input
+            }
+        };
+
+        const postData = JSON.stringify(requestData);
+        
+        const options = {
+            hostname: 'localhost',
+            port: 11434,
+            path: '/api/generate', // Using generate API instead of chat
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            },
+            timeout: 300000 // 5 minutes
+        };
+
+        const assistantMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+            model: this.currentModel
+        };
+
+        let responseTimeout: NodeJS.Timeout | null = null;
+        let hasReceivedData = false;
+
+        const req = http.request(options, (res) => {
+            let buffer = '';
+            
+            if (responseTimeout) {
+                clearTimeout(responseTimeout);
+                responseTimeout = null;
+            }
+
+            res.on('data', (chunk) => {
+                hasReceivedData = true;
+                buffer += chunk.toString();
+                
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            const data = JSON.parse(line);
+                            if (data.response) {
+                                assistantMessage.content += data.response;
+                                this.streamMessageUpdate(assistantMessage);
+                            }
+                            
+                            if (data.done) {
+                                // Clean up any trailing whitespace and stop tokens
+                                assistantMessage.content = assistantMessage.content.trim();
+                                resolve(assistantMessage);
+                                return;
+                            }
+                        } catch (parseError) {
+                            console.warn('Failed to parse streaming response:', parseError);
+                        }
+                    }
+                }
+            });
+
+            res.on('end', () => {
+                if (!hasReceivedData) {
+                    reject(new Error('No data received from Ollama'));
+                } else {
+                    resolve(assistantMessage);
+                }
+            });
+        });
+
+        req.on('error', (error) => {
+            if (responseTimeout) {
+                clearTimeout(responseTimeout);
+            }
+            reject(new Error(`Generate request failed: ${error.message}`));
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Generate request timeout - model may be loading'));
+        });
+
+        responseTimeout = setTimeout(() => {
+            if (!hasReceivedData) {
+                req.destroy();
+                reject(new Error('No response from Ollama - check if model is loaded'));
+            }
+        }, 180000); // 3 minutes
+
+        req.write(postData);
+        req.end();
+    });
+}
 
     private clearChatHistory(): void {
         this.chatHistory = [];

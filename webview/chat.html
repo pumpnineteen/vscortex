@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VSCortex Chat</title>
     <link rel="stylesheet" href="{{cssUri}}">
+    <!-- Markdown parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <!-- Syntax highlighting -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
 </head>
 <body>
     <div class="container">
@@ -50,6 +55,10 @@
                         <input type="checkbox" id="includeContext" />
                         <label for="includeContext">Include selected code as context</label>
                     </div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="webSearch" />
+                        <label for="webSearch">Enable web search (RAG)</label>
+                    </div>
                 </div>
                 
                 <div class="chat-input-row">
@@ -66,6 +75,26 @@
             </div>
         </div>
     </div>
+    
+    <script>
+        // Configure marked.js with highlight.js integration
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    try {
+                        return hljs.highlight(code, { language: lang }).value;
+                    } catch (err) {
+                        console.warn('Highlighting failed for language:', lang);
+                    }
+                }
+                return hljs.highlightAuto(code).value;
+            },
+            breaks: true,           // Convert \n to <br>
+            gfm: true,             // GitHub flavored markdown
+            headerIds: false,      // Don't add IDs to headers
+            mangle: false          // Don't mangle autolinked emails
+        });
+    </script>
     
     <script src="{{scriptUri}}"></script>
 </body>

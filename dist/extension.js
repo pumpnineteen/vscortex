@@ -197,7 +197,7 @@ Question: ${content}`;
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(postData)
         },
-        timeout: 3e4
+        timeout: 3e5
       };
       const assistantMessage = {
         id: Date.now().toString(),
@@ -241,6 +241,107 @@ Question: ${content}`;
         req.destroy();
         reject(new Error("Chat request timeout"));
       });
+      req.write(postData);
+      req.end();
+    });
+  }
+  sendChatMessageGenerate(content) {
+    return new Promise((resolve, reject) => {
+      const contextMessages = this.chatHistory.filter((msg) => msg.role !== "system").map((msg) => `${msg.role === "user" ? "Human" : "Assistant"}: ${msg.content}`).join("\n\n");
+      const fullPrompt = contextMessages ? `${contextMessages}
+
+Human: ${content}
+
+Assistant:` : `Human: ${content}
+
+Assistant:`;
+      const requestData = {
+        model: this.currentModel,
+        prompt: fullPrompt,
+        stream: true,
+        options: {
+          temperature: 0.7,
+          stop: ["Human:", "\nHuman:"]
+          // Stop generation at next human input
+        }
+      };
+      const postData = JSON.stringify(requestData);
+      const options = {
+        hostname: "localhost",
+        port: 11434,
+        path: "/api/generate",
+        // Using generate API instead of chat
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(postData)
+        },
+        timeout: 3e5
+        // 5 minutes
+      };
+      const assistantMessage = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        model: this.currentModel
+      };
+      let responseTimeout = null;
+      let hasReceivedData = false;
+      const req = http.request(options, (res) => {
+        let buffer = "";
+        if (responseTimeout) {
+          clearTimeout(responseTimeout);
+          responseTimeout = null;
+        }
+        res.on("data", (chunk) => {
+          hasReceivedData = true;
+          buffer += chunk.toString();
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.trim()) {
+              try {
+                const data = JSON.parse(line);
+                if (data.response) {
+                  assistantMessage.content += data.response;
+                  this.streamMessageUpdate(assistantMessage);
+                }
+                if (data.done) {
+                  assistantMessage.content = assistantMessage.content.trim();
+                  resolve(assistantMessage);
+                  return;
+                }
+              } catch (parseError) {
+                console.warn("Failed to parse streaming response:", parseError);
+              }
+            }
+          }
+        });
+        res.on("end", () => {
+          if (!hasReceivedData) {
+            reject(new Error("No data received from Ollama"));
+          } else {
+            resolve(assistantMessage);
+          }
+        });
+      });
+      req.on("error", (error) => {
+        if (responseTimeout) {
+          clearTimeout(responseTimeout);
+        }
+        reject(new Error(`Generate request failed: ${error.message}`));
+      });
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error("Generate request timeout - model may be loading"));
+      });
+      responseTimeout = setTimeout(() => {
+        if (!hasReceivedData) {
+          req.destroy();
+          reject(new Error("No response from Ollama - check if model is loaded"));
+        }
+      }, 18e4);
       req.write(postData);
       req.end();
     });
